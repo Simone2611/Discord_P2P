@@ -52,6 +52,17 @@ function connectToPeer() {
       "status"
     ).innerHTML = `<span class="success">Connected to: ${peerId}</span>`;
     document.getElementById("sendBtn").disabled = false;
+
+    // Invia il nome utente al peer remoto
+    conn.send({ type: "username", username: username });
+
+    // Invia il proprio username a tutti i peer connessi
+    for (let [id, connection] of connections.entries()) {
+      if (connection.open) {
+        connection.send({ type: "username", username });
+      }
+    }
+
     updateConnectedPeers();
   });
 
@@ -74,7 +85,21 @@ peer.on("connection", function (connection) {
   ).innerHTML = `<span class="success">Connected from: ${peerId}</span>`;
   document.getElementById("sendBtn").disabled = false;
 
-  connection.on("data", handleIncomingMessage);
+  // Invia l'elenco dei peer connessi al nuovo peer
+  syncPeers(connection);
+
+  connection.on("data", function (data) {
+    if (data.type === "username") {
+      console.log(`Peer ${peerId} username: ${data.username}`);
+      connection.username = data.username; // Salva l'username del peer remoto
+      updateConnectedPeers();
+    } else if (data.type === "sync") {
+      handleSync(data.peers);
+    } else {
+      handleIncomingMessage(data);
+    }
+  });
+
   connection.on("close", () => handleConnectionClose(peerId));
   updateConnectedPeers();
 });
@@ -222,17 +247,26 @@ function updateConnectedPeers() {
     return;
   }
 
-  let peersHtml = '<div class="peers-title">Connected Peers:</div>';
-  for (let peerId of connections.keys()) {
+  // Mostra il proprio username come primo elemento
+  let peersHtml = `
+    <div class="peer-item self">
+      You (${username})
+    </div>
+  `;
+
+  // Mostra gli altri peer connessi
+  for (let [peerId, conn] of connections.entries()) {
+    const peerUsername = conn.username || peerId; // Usa l'username se disponibile, altrimenti l'ID
     peersHtml += `
       <div class="peer-item">
-        <span class="peer-id">${peerId}</span>
+        ${peerUsername}
         <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
           Disconnect
         </button>
       </div>
     `;
   }
+
   connectedPeersDiv.innerHTML = peersHtml;
 }
 
@@ -285,3 +319,26 @@ document
       startChat();
     }
   });
+
+function syncPeers(connection) {
+  const peersData = Array.from(connections.entries()).map(([peerId, conn]) => ({
+    peerId,
+    username: conn.username || peerId,
+  }));
+
+  connection.send({ type: "sync", peers: peersData });
+}
+
+function handleSync(peers) {
+  peers.forEach(({ peerId, username }) => {
+    if (!connections.has(peerId)) {
+      // Crea una connessione fittizia per visualizzare i peer
+      connections.set(peerId, { username });
+    } else {
+      // Aggiorna l'username se già connesso
+      connections.get(peerId).username = username;
+    }
+  });
+
+  updateConnectedPeers();
+}
