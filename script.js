@@ -25,10 +25,61 @@ function startChat() {
   peer = new Peer();
 }
 
+function generateNewId() {
+  username = document.getElementById("usernameInput").value.trim();
+  if (!username) {
+    alert("Please enter a username");
+    return;
+  }
+
+  document.getElementById("usernameScreen").style.display = "none";
+  document.getElementById("chatContainer").style.display = "flex";
+
+  isHost = true; // L'utente è l'host principale
+
+  // Mostra il proprio ID sopra la chat
+  document.getElementById("peerId").textContent = peer.id;
+
+  console.log("You are the host.");
+}
+
+function showJoinHostInput() {
+  username = document.getElementById("usernameInput").value.trim();
+  if (!username) {
+    alert("Please enter a username");
+    return;
+  }
+
+  document.getElementById("joinHostInput").classList.remove("hidden");
+}
+
+function joinHost() {
+  const hostId = document.getElementById("hostIdInput").value.trim();
+  if (!hostId) {
+    alert("Please enter a valid Host ID");
+    return;
+  }
+
+  document.getElementById("usernameScreen").style.display = "none";
+  document.getElementById("chatContainer").style.display = "flex";
+
+  isHost = false; // L'utente non è l'host principale
+
+  // Mostra l'ID dell'host sopra la chat
+  document.getElementById("peerId").textContent = hostId;
+
+  connectToPeer(hostId);
+}
+
 peer.on("open", function (id) {
   console.log("My peer ID is: " + id);
   document.getElementById("peerId").textContent = id;
-  isHost = true; // First person to open is the host
+
+  // Imposta l'utente corrente come host principale se è il primo a connettersi
+  if (connections.size === 0) {
+    isHost = true;
+    console.log("You are the host.");
+  }
 });
 
 peer.on("error", function (err) {
@@ -38,9 +89,8 @@ peer.on("error", function (err) {
   ).innerHTML = `<span class="error">Error: ${err.message}</span>`;
 });
 
-// Update connectToPeer function
-function connectToPeer() {
-  const peerId = document.getElementById("peerInput").value.trim();
+function connectToPeer(hostId) {
+  const peerId = hostId || document.getElementById("peerInput").value.trim();
   if (!peerId) {
     document.getElementById("status").innerHTML =
       '<span class="error">Please enter a valid Peer ID</span>';
@@ -86,10 +136,6 @@ function connectToPeer() {
 peer.on("connection", function (connection) {
   const peerId = connection.peer;
 
-  if (connections.has(peerId)) {
-    connections.get(peerId).close();
-  }
-
   connections.set(peerId, connection);
 
   // Send host information to new connection
@@ -101,9 +147,11 @@ peer.on("connection", function (connection) {
 
   connection.on("data", handleData);
   connection.on("close", () => handleConnectionClose(peerId));
+
   updateConnectedPeers();
 });
 
+// Move these functions outside of peer.on("connection") to make them globally accessible
 function handleData(data) {
   if (data.type === "user_info") {
     const connection = Array.from(connections.values()).find(
@@ -115,7 +163,6 @@ function handleData(data) {
       updateConnectedPeers();
     }
   } else if (data.type === "request_host_info") {
-    // Respond with host info if we are the host
     if (isHost) {
       const connection = Array.from(connections.values()).find(
         (c) => c.peer === this.peer
@@ -152,17 +199,14 @@ function handleIncomingMessage(data) {
     };
   }
 
-  // Only display message if it's a chat message or deletion
   if (messageObj.type === "chat" || messageObj.deleted) {
     received.innerHTML += `
-      <div class="message received" data-message-id="${
-        messageObj.messageId || Date.now()
-      }">
+      <div class="message ${
+        messageObj.origin === peer.id ? "sent" : "received"
+      }" data-message-id="${messageObj.messageId || Date.now()}">
           <div class="sender-name">${messageObj.username || "Unknown"}</div>
           <div class="text">${
-            messageObj.deleted
-              ? "<em>Message deleted</em>"
-              : messageObj.text || messageObj
+            messageObj.deleted ? "<em>Message deleted</em>" : messageObj.text
           }</div>
           <div class="timestamp">${timeString}</div>
       </div>
@@ -178,28 +222,6 @@ function handleIncomingMessage(data) {
   }
 }
 
-// Update handleConnectionClose function
-function handleConnectionClose(peerId) {
-  console.log("Connection closed with:", peerId);
-  connections.delete(peerId);
-  document.getElementById(
-    "status"
-  ).innerHTML = `<span class="error">Connection closed with: ${peerId}</span>`;
-  // Only disable send button if no connections remain
-  document.getElementById("sendBtn").disabled = connections.size === 0;
-  updateConnectedPeers();
-}
-
-function handleConnectionError(peerId, err) {
-  console.error("Connection error:", err);
-  connections.delete(peerId);
-  document.getElementById(
-    "status"
-  ).innerHTML = `<span class="error">Connection error with ${peerId}: ${err.message}</span>`;
-  document.getElementById("sendBtn").disabled = connections.size === 0;
-  updateConnectedPeers();
-}
-
 // Update sendMessage function
 function sendMessage() {
   const messageText = document.getElementById("message").value.trim();
@@ -207,12 +229,6 @@ function sendMessage() {
   if (!messageText) {
     document.getElementById("status").innerHTML =
       '<span class="error">Please enter a message</span>';
-    return;
-  }
-
-  if (connections.size === 0) {
-    document.getElementById("status").innerHTML =
-      '<span class="error">No active connections</span>';
     return;
   }
 
@@ -228,7 +244,9 @@ function sendMessage() {
 
     // Send to all peers
     for (let conn of connections.values()) {
-      conn.send(messageObj);
+      if (conn.open) {
+        conn.send(messageObj);
+      }
     }
 
     // Add your own message to the chat
@@ -240,24 +258,22 @@ function sendMessage() {
     });
 
     received.innerHTML += `
-        <div class="message sent" data-message-id="${messageId}">
-            <div class="message-header">
-                <div class="sender-name">You</div>
-                <button class="delete-btn" onclick="deleteMessage(this.parentElement.parentElement)">
-                  <i class="fa-solid fa-trash"></i>
-                </button>
-            </div>
-            <div class="text">${messageText}</div>
-            <div class="timestamp">${timeString}</div>
-        </div>
+      <div class="message sent" data-message-id="${messageId}">
+          <div class="message-header">
+              <div class="sender-name">You</div>
+              <button class="delete-btn" onclick="deleteMessage(this.parentElement.parentElement)">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+          </div>
+          <div class="text">${messageText}</div>
+          <div class="timestamp">${timeString}</div>
+      </div>
     `;
     received.scrollTop = received.scrollHeight;
 
     document.getElementById("message").value = "";
     document.getElementById("status").innerHTML =
       '<span class="success">Message sent!</span>';
-    // Ensure button stays enabled
-    document.getElementById("sendBtn").disabled = false;
   } catch (err) {
     console.error("Send failed:", err);
     document.getElementById(
@@ -353,3 +369,31 @@ document
       startChat();
     }
   });
+
+function syncPeers(connection) {
+  const peersData = Array.from(connections.entries()).map(([peerId, conn]) => ({
+    peerId,
+    username: conn.username || peerId,
+  }));
+
+  connection.send({ type: "sync", peers: peersData, host: peer.id });
+}
+
+function handleSync(data) {
+  const { peers, host } = data;
+
+  peers.forEach(({ peerId, username }) => {
+    if (!connections.has(peerId)) {
+      // Crea una connessione fittizia per visualizzare i peer
+      connections.set(peerId, { username });
+    } else {
+      // Aggiorna l'username se già connesso
+      connections.get(peerId).username = username;
+    }
+  });
+
+  // Aggiorna lo stato dell'host
+  isHost = peer.id === host;
+
+  updateConnectedPeers();
+}
