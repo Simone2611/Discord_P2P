@@ -310,7 +310,7 @@ function updateConnectedPeers() {
   // Add yourself first
   peersHtml += `
     <div class="peer-item self">
-      <span class="peer-id">${username} (${isHost ? "host" : ""})</span>
+      <span class="peer-id">${username} ${isHost ? "(host)" : ""}</span>
     </div>
   `;
 
