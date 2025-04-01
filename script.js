@@ -175,6 +175,21 @@ function handleData(data) {
         });
       }
     }
+  } else if (data.type === "delete_message") {
+    // Gestisci la cancellazione del messaggio
+    const messageElement = document.querySelector(
+      `.message[data-message-id="${data.messageId}"]`
+    );
+    if (messageElement) {
+      const textDiv = messageElement.querySelector(".text");
+      textDiv.innerHTML = "<em>Message deleted</em>";
+
+      // Rimuovi il pulsante di cancellazione se presente
+      const deleteBtn = messageElement.querySelector(".delete-btn");
+      if (deleteBtn) {
+        deleteBtn.remove();
+      }
+    }
   } else {
     handleIncomingMessage(data);
   }
@@ -292,14 +307,12 @@ function updateConnectedPeers() {
 
   let peersHtml = '<div class="peers-title">Connected Peers:</div>';
 
-  // Add yourself first if you're the host
-  if (isHost) {
-    peersHtml += `
-      <div class="peer-item">
-        <span class="peer-id">${username} (host)</span>
-      </div>
-    `;
-  }
+  // Add yourself first
+  peersHtml += `
+    <div class="peer-item self">
+      <span class="peer-id">${username} (${isHost ? "host" : ""})</span>
+    </div>
+  `;
 
   // Add other peers
   for (let [peerId, conn] of connections.entries()) {
@@ -308,9 +321,13 @@ function updateConnectedPeers() {
     peersHtml += `
       <div class="peer-item">
         <span class="peer-id">${displayName}${hostLabel}</span>
-        <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
-          Disconnect
-        </button>
+        ${
+          isHost
+            ? `<button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
+                Disconnect
+              </button>`
+            : ""
+        }
       </div>
     `;
   }
@@ -319,10 +336,18 @@ function updateConnectedPeers() {
 }
 
 function disconnectPeer(peerId) {
+  if (!isHost) {
+    document.getElementById("status").innerHTML =
+      '<span class="error">Only the host can disconnect peers</span>';
+    return;
+  }
+
   if (connections.has(peerId)) {
     connections.get(peerId).close();
     connections.delete(peerId);
     updateConnectedPeers();
+    document.getElementById("status").innerHTML =
+      `<span class="success">Disconnected peer: ${peerId}</span>`;
   }
 }
 
@@ -330,27 +355,26 @@ function disconnectPeer(peerId) {
 function deleteMessage(messageElement) {
   const messageId = messageElement.dataset.messageId;
 
-  // Update the message display
+  // Aggiorna il messaggio localmente
   const textDiv = messageElement.querySelector(".text");
   textDiv.innerHTML = "<em>Message deleted</em>";
 
-  // Remove the delete button
+  // Rimuovi il pulsante di cancellazione
   const deleteBtn = messageElement.querySelector(".delete-btn");
   if (deleteBtn) {
     deleteBtn.remove();
   }
 
-  // Send delete notification to all peers
+  // Invia una notifica di cancellazione agli altri peer
   const deleteNotification = {
-    type: "chat",
-    username: username,
-    deleted: true,
-    origin: peer.id,
+    type: "delete_message",
     messageId: messageId,
   };
 
   for (let conn of connections.values()) {
-    conn.send(deleteNotification);
+    if (conn.open) {
+      conn.send(deleteNotification);
+    }
   }
 }
 

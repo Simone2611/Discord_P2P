@@ -150,9 +150,12 @@ body {
 }
 
 .sent {
-  background-color: #2b2d31;
+  background-color: #5865f2d2;
   align-self: flex-end;
   color: #ffffff;
+}
+.sent .sender-name{
+  color: #2b2d31;
 }
 
 .message-header {
@@ -280,10 +283,7 @@ em {
   margin-bottom: 5px;
 }
 
-.peer-id {
-  font-size: 0.9em;
-  color: #ffffff;
-}
+
 
 .peer-id .host {
   color: #5865f2;
@@ -291,12 +291,12 @@ em {
 }
 .peer-item.self {
   color: #ff8c42; /* Colore arancione per il proprio nome */
-  font-weight: bold;
+
 }
 
 .disconnect-btn {
   padding: 4px 8px;
-  background-color: #ed4245;
+  background-color: #b5bac159;
   color: white;
   border: none;
   border-radius: 3px;
