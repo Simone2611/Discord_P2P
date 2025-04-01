@@ -155,6 +155,35 @@ body {
   color: #ffffff;
 }
 
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.delete-btn {
+  background: none;
+  border: none;
+  color: #b5bac1;
+  cursor: pointer;
+  font-size: 1em;
+  padding: 0 5px;
+  visibility: hidden;
+}
+
+.message.sent:hover .delete-btn {
+  visibility: visible;
+}
+
+.delete-btn:hover {
+  color: #ed4245;
+}
+
+em {
+  color: #b5bac1;
+  font-style: italic;
+}
+
 .timestamp {
   font-size: 0.7em;
   color: #b5bac1;
