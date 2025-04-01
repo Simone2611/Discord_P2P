@@ -1,6 +1,7 @@
 const peer = new Peer();
 let connections = new Map(); // Store multiple connections
 let username = "";
+let isHost = false; // Indica se l'utente corrente è l'host principale
 
 // Show username screen first
 document.getElementById("usernameScreen").style.display = "block";
@@ -17,9 +18,53 @@ function startChat() {
   document.getElementById("chatContainer").style.display = "flex";
 }
 
+function generateNewId() {
+  username = document.getElementById("usernameInput").value.trim();
+  if (!username) {
+    alert("Please enter a username");
+    return;
+  }
+
+  document.getElementById("usernameScreen").style.display = "none";
+  document.getElementById("chatContainer").style.display = "flex";
+
+  isHost = true; // L'utente è l'host principale
+  console.log("You are the host.");
+}
+
+function showJoinHostInput() {
+  username = document.getElementById("usernameInput").value.trim();
+  if (!username) {
+    alert("Please enter a username");
+    return;
+  }
+
+  document.getElementById("joinHostInput").classList.remove("hidden");
+}
+
+function joinHost() {
+  const hostId = document.getElementById("hostIdInput").value.trim();
+  if (!hostId) {
+    alert("Please enter a valid Host ID");
+    return;
+  }
+
+  document.getElementById("usernameScreen").style.display = "none";
+  document.getElementById("chatContainer").style.display = "flex";
+
+  isHost = false; // L'utente non è l'host principale
+  connectToPeer(hostId);
+}
+
 peer.on("open", function (id) {
   console.log("My peer ID is: " + id);
   document.getElementById("peerId").textContent = id;
+
+  // Imposta l'utente corrente come host principale se è il primo a connettersi
+  if (connections.size === 0) {
+    isHost = true;
+    console.log("You are the host.");
+  }
 });
 
 peer.on("error", function (err) {
@@ -29,8 +74,8 @@ peer.on("error", function (err) {
   ).innerHTML = `<span class="error">Error: ${err.message}</span>`;
 });
 
-function connectToPeer() {
-  const peerId = document.getElementById("peerInput").value.trim();
+function connectToPeer(hostId) {
+  const peerId = hostId || document.getElementById("peerInput").value.trim();
   if (!peerId) {
     document.getElementById("status").innerHTML =
       '<span class="error">Please enter a valid Peer ID</span>';
@@ -55,13 +100,6 @@ function connectToPeer() {
 
     // Invia il nome utente al peer remoto
     conn.send({ type: "username", username: username });
-
-    // Invia il proprio username a tutti i peer connessi
-    for (let [id, connection] of connections.entries()) {
-      if (connection.open) {
-        connection.send({ type: "username", username });
-      }
-    }
 
     updateConnectedPeers();
   });
@@ -94,7 +132,7 @@ peer.on("connection", function (connection) {
       connection.username = data.username; // Salva l'username del peer remoto
       updateConnectedPeers();
     } else if (data.type === "sync") {
-      handleSync(data.peers);
+      handleSync(data);
     } else {
       handleIncomingMessage(data);
     }
@@ -257,12 +295,17 @@ function updateConnectedPeers() {
   // Mostra gli altri peer connessi
   for (let [peerId, conn] of connections.entries()) {
     const peerUsername = conn.username || peerId; // Usa l'username se disponibile, altrimenti l'ID
+
     peersHtml += `
       <div class="peer-item">
         ${peerUsername}
-        <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
-          Disconnect
-        </button>
+        ${
+          isHost
+            ? `<button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
+                Disconnect
+              </button>`
+            : ""
+        }
       </div>
     `;
   }
@@ -326,10 +369,12 @@ function syncPeers(connection) {
     username: conn.username || peerId,
   }));
 
-  connection.send({ type: "sync", peers: peersData });
+  connection.send({ type: "sync", peers: peersData, host: peer.id });
 }
 
-function handleSync(peers) {
+function handleSync(data) {
+  const { peers, host } = data;
+
   peers.forEach(({ peerId, username }) => {
     if (!connections.has(peerId)) {
       // Crea una connessione fittizia per visualizzare i peer
@@ -339,6 +384,9 @@ function handleSync(peers) {
       connections.get(peerId).username = username;
     }
   });
+
+  // Aggiorna lo stato dell'host
+  isHost = peer.id === host;
 
   updateConnectedPeers();
 }

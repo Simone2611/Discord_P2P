@@ -20,11 +20,26 @@
         placeholder="Your name"
         maxlength="20"
       />
-      <button onclick="startChat()" class="start-chat-btn">
-        Start Chatting
-      </button>
+      <div class="id-options">
+        <button onclick="generateNewId()" class="id-option-btn">
+          Generate New ID
+        </button>
+        <button onclick="showJoinHostInput()" class="id-option-btn">
+          Join Existing Host
+        </button>
+      </div>
+      <div id="joinHostInput" class="join-host-input hidden">
+        <input
+          type="text"
+          id="hostIdInput"
+          class="username-input"
+          placeholder="Enter Host ID"
+        />
+        <button onclick="joinHost()" class="start-chat-btn">
+          Join Host
+        </button>
+      </div>
     </div>
-    
 
     <!-- Chat Container (initially hidden) -->
     <div class="chat-container" id="chatContainer">
