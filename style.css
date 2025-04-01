@@ -140,6 +140,7 @@ body {
   border-radius: 3px;
   font-size: 0.95em;
   position: relative;
+  word-break: break-all;
 }
 
 .received {
