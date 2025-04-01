@@ -29,6 +29,10 @@ function generateNewId() {
   document.getElementById("chatContainer").style.display = "flex";
 
   isHost = true; // L'utente è l'host principale
+
+  // Mostra il proprio ID sopra la chat
+  document.getElementById("peerId").textContent = peer.id;
+
   console.log("You are the host.");
 }
 
@@ -53,6 +57,10 @@ function joinHost() {
   document.getElementById("chatContainer").style.display = "flex";
 
   isHost = false; // L'utente non è l'host principale
+
+  // Mostra l'ID dell'host sopra la chat
+  document.getElementById("peerId").textContent = hostId;
+
   connectToPeer(hostId);
 }
 
@@ -285,9 +293,9 @@ function updateConnectedPeers() {
     return;
   }
 
-  // Mostra il proprio username come primo elemento
+  // Mostra il proprio username come primo elemento con un colore diverso
   let peersHtml = `
-    <div class="peer-item self">
+    <div class="peer-item self" style="color: #ff8c42; font-weight: bold;">
       You (${username})
     </div>
   `;
