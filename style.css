@@ -219,3 +219,53 @@ body {
 .error {
   color: #ed4245;
 }
+
+.connected-peers {
+  padding: 10px 15px;
+  background-color: #2b2d31;
+  border-bottom: 1px solid #1e1f22;
+  color: #ffffff;
+}
+
+.no-peers {
+  color: #b5bac1;
+  font-size: 0.9em;
+  text-align: center;
+  padding: 5px 0;
+}
+
+.peers-title {
+  font-size: 0.9em;
+  color: #b5bac1;
+  margin-bottom: 8px;
+}
+
+.peer-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background-color: #383a40;
+  border-radius: 3px;
+  margin-bottom: 5px;
+}
+
+.peer-id {
+  font-size: 0.9em;
+  color: #ffffff;
+}
+
+.disconnect-btn {
+  padding: 4px 8px;
+  background-color: #ed4245;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 0.8em;
+  transition: background-color 0.2s;
+}
+
+.disconnect-btn:hover {
+  background-color: #c93437;
+}

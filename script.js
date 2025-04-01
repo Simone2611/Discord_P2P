@@ -1,5 +1,5 @@
 const peer = new Peer();
-let conn = null;
+let connections = new Map(); // Store multiple connections
 let username = "";
 
 // Show username screen first
@@ -37,39 +37,46 @@ function connectToPeer() {
     return;
   }
 
-  if (conn) {
-    conn.close();
+  if (connections.has(peerId)) {
+    document.getElementById("status").innerHTML =
+      '<span class="error">Already connected to this peer</span>';
+    return;
   }
 
-  conn = peer.connect(peerId, { reliable: true, serialization: "json" });
+  const conn = peer.connect(peerId, { reliable: true, serialization: "json" });
 
   conn.on("open", function () {
+    connections.set(peerId, conn);
     console.log("Connected to:", peerId);
     document.getElementById(
       "status"
     ).innerHTML = `<span class="success">Connected to: ${peerId}</span>`;
     document.getElementById("sendBtn").disabled = false;
+    updateConnectedPeers();
   });
 
   conn.on("data", handleIncomingMessage);
-  conn.on("close", handleConnectionClose);
-  conn.on("error", handleConnectionError);
+  conn.on("close", () => handleConnectionClose(peerId));
+  conn.on("error", (err) => handleConnectionError(peerId, err));
 }
 
 peer.on("connection", function (connection) {
-  if (conn) {
-    conn.close();
+  const peerId = connection.peer;
+
+  if (connections.has(peerId)) {
+    connections.get(peerId).close();
   }
 
-  conn = connection;
-  console.log("Incoming connection from:", conn.peer);
+  connections.set(peerId, connection);
+  console.log("Incoming connection from:", peerId);
   document.getElementById(
     "status"
-  ).innerHTML = `<span class="success">Connected from: ${conn.peer}</span>`;
+  ).innerHTML = `<span class="success">Connected from: ${peerId}</span>`;
   document.getElementById("sendBtn").disabled = false;
 
-  conn.on("data", handleIncomingMessage);
-  conn.on("close", handleConnectionClose);
+  connection.on("data", handleIncomingMessage);
+  connection.on("close", () => handleConnectionClose(peerId));
+  updateConnectedPeers();
 });
 
 function handleIncomingMessage(data) {
@@ -81,18 +88,17 @@ function handleIncomingMessage(data) {
     minute: "2-digit",
   });
 
-  // Parse the incoming message (should be an object with username and message)
   let messageObj;
   try {
     messageObj = typeof data === "string" ? JSON.parse(data) : data;
   } catch (e) {
-    // Fallback if message isn't properly formatted
     messageObj = {
       username: "Unknown",
       text: data,
     };
   }
 
+  // Mostra il messaggio nella chat
   received.innerHTML += `
           <div class="message received">
             <div class="sender-name">${messageObj.username || "Unknown"}</div>
@@ -101,29 +107,39 @@ function handleIncomingMessage(data) {
           </div>
         `;
   received.scrollTop = received.scrollHeight;
+
+  // Inoltra il messaggio agli altri peer connessi
+  for (let [peerId, conn] of connections.entries()) {
+    if (conn.open && conn.peer !== messageObj.origin) {
+      conn.send({ ...messageObj, origin: peer.id });
+    }
+  }
 }
 
-function handleConnectionClose() {
-  console.log("Connection closed");
-  document.getElementById("status").innerHTML =
-    '<span class="error">Connection closed</span>';
-  document.getElementById("sendBtn").disabled = true;
-  conn = null;
-}
-
-function handleConnectionError(err) {
-  console.error("Connection error:", err);
+function handleConnectionClose(peerId) {
+  console.log("Connection closed with:", peerId);
+  connections.delete(peerId);
   document.getElementById(
     "status"
-  ).innerHTML = `<span class="error">Connection error: ${err.message}</span>`;
-  document.getElementById("sendBtn").disabled = true;
-  conn = null;
+  ).innerHTML = `<span class="error">Connection closed with: ${peerId}</span>`;
+  document.getElementById("sendBtn").disabled = connections.size === 0;
+  updateConnectedPeers();
+}
+
+function handleConnectionError(peerId, err) {
+  console.error("Connection error:", err);
+  connections.delete(peerId);
+  document.getElementById(
+    "status"
+  ).innerHTML = `<span class="error">Connection error with ${peerId}: ${err.message}</span>`;
+  document.getElementById("sendBtn").disabled = connections.size === 0;
+  updateConnectedPeers();
 }
 
 function sendMessage() {
-  if (!conn || !conn.open) {
+  if (connections.size === 0) {
     document.getElementById("status").innerHTML =
-      '<span class="error">No active connection</span>';
+      '<span class="error">No active connections</span>';
     document.getElementById("sendBtn").disabled = true;
     return;
   }
@@ -136,14 +152,16 @@ function sendMessage() {
   }
 
   try {
-    // Send both username and message as an object
     const messageObj = {
       username: username,
       text: messageText,
+      origin: peer.id, // Aggiungi l'ID del peer che ha originato il messaggio
     };
 
-    conn.send(messageObj);
-    console.log("Message sent:", messageObj);
+    for (let conn of connections.values()) {
+      conn.send(messageObj);
+    }
+    console.log("Message sent to all peers:", messageObj);
 
     const received = document.getElementById("received");
     const now = new Date();
@@ -152,7 +170,6 @@ function sendMessage() {
       minute: "2-digit",
     });
 
-    // Display sent message with username
     received.innerHTML += `
             <div class="message sent">
               <div class="sender-name">You</div>
@@ -170,6 +187,36 @@ function sendMessage() {
     document.getElementById(
       "status"
     ).innerHTML = `<span class="error">Failed to send: ${err.message}</span>`;
+  }
+}
+
+function updateConnectedPeers() {
+  const connectedPeersDiv = document.getElementById("connectedPeers");
+  if (connections.size === 0) {
+    connectedPeersDiv.innerHTML =
+      '<div class="no-peers">No connected peers</div>';
+    return;
+  }
+
+  let peersHtml = '<div class="peers-title">Connected Peers:</div>';
+  for (let peerId of connections.keys()) {
+    peersHtml += `
+      <div class="peer-item">
+        <span class="peer-id">${peerId}</span>
+        <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
+          Disconnect
+        </button>
+      </div>
+    `;
+  }
+  connectedPeersDiv.innerHTML = peersHtml;
+}
+
+function disconnectPeer(peerId) {
+  if (connections.has(peerId)) {
+    connections.get(peerId).close();
+    connections.delete(peerId);
+    updateConnectedPeers();
   }
 }
 
