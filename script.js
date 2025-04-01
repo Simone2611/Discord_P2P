@@ -153,7 +153,35 @@ peer.on("connection", function (connection) {
 
 // Move these functions outside of peer.on("connection") to make them globally accessible
 function handleData(data) {
-  if (data.type === "user_info") {
+  if (data.type === "disconnect") {
+    // Mostra un messaggio di disconnessione all'utente
+    alert(data.message);
+
+    // Disabilita l'invio di messaggi
+    document.getElementById("message").disabled = true;
+    document.getElementById("sendBtn").disabled = true;
+
+    // Mostra il pulsante per tornare alla pagina principale
+    const mainPageBtn = document.createElement("button");
+    mainPageBtn.textContent = "Go to Main Page";
+    mainPageBtn.className = "main-page-btn";
+    mainPageBtn.onclick = function () {
+      // Torna alla schermata principale
+      document.getElementById("chatContainer").style.display = "none";
+      document.getElementById("usernameScreen").style.display = "block";
+
+      // Ripristina lo stato iniziale
+      document.getElementById("message").disabled = false;
+      document.getElementById("sendBtn").disabled = false;
+      mainPageBtn.remove();
+    };
+
+    document.getElementById("chatContainer").appendChild(mainPageBtn);
+
+    // Aggiorna lo stato della chat
+    document.getElementById("status").innerHTML =
+      '<span class="error">You have been disconnected.</span>';
+  } else if (data.type === "user_info") {
     const connection = Array.from(connections.values()).find(
       (c) => c.peer === this.peer
     );
@@ -343,9 +371,21 @@ function disconnectPeer(peerId) {
   }
 
   if (connections.has(peerId)) {
-    connections.get(peerId).close();
+    const conn = connections.get(peerId);
+
+    // Invia un messaggio di disconnessione al peer
+    conn.send({
+      type: "disconnect",
+      message: "You have been disconnected by the host.",
+    });
+
+    // Chiudi la connessione e rimuovila dalla mappa
+    conn.close();
     connections.delete(peerId);
+
+    // Aggiorna la lista dei peer connessi
     updateConnectedPeers();
+
     document.getElementById("status").innerHTML =
       `<span class="success">Disconnected peer: ${peerId}</span>`;
   }

@@ -355,3 +355,19 @@ em {
 .hidden {
   display: none;
 }
+
+.main-page-btn {
+  margin-top: 20px;
+  padding: 10px 20px;
+  background-color: var(--primary-button-color);
+  color: var(--text-color);
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 1em;
+  transition: background-color 0.2s;
+}
+
+.main-page-btn:hover {
+  background-color: var(--hover-button-color);
+}
