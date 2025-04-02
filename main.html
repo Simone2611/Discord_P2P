@@ -52,9 +52,33 @@
 
       <div class="main-content">
         <div class="chat-header">
-          <h1>PeerJS Chat</h1>
-          <div class="peer-info" id="copyText">
-            ID host <span id="peerId">...</span>
+          <div class="header-main">
+            <h1>PeerJS Chat</h1>
+            <div class="header-controls">
+              <div class="peer-info" id="copyText">
+                ID host <span id="peerId">...</span>
+              </div>
+              <button
+                class="call-control-btn"
+                id="startCallBtn"
+                title="Start call"
+                onclick="startGroupCall()"
+              >
+                <i class="fa-solid fa-phone"></i>
+              </button>
+              <button
+                class="call-control-btn disconnect-call"
+                id="endCallBtn"
+                title="End call"
+                onclick="endGroupCall()"
+                style="display: none"
+              >
+                <i
+                  class="fa-solid fa-phone fa-rotate-by"
+                  style="--fa-rotate-angle: 135deg"
+                ></i>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -73,8 +97,38 @@
         </div>
 
         <div class="status" id="status"></div>
+
+        <!-- Add call controls at the bottom of main-content -->
+        <div class="call-controls" id="callControls" style="display: none">
+          <button
+            class="audio-control-btn"
+            id="toggleMicBtn"
+            onclick="toggleMicrophone()"
+          >
+            <i class="fa-solid fa-microphone"></i>
+          </button>
+          <button
+            class="audio-control-btn"
+            id="toggleAudioBtn"
+            onclick="toggleAudio()"
+          >
+            <i class="fa-solid fa-volume-high"></i>
+          </button>
+        </div>
       </div>
     </div>
+
+    <!-- Add call notification popup -->
+    <div class="call-notification" id="callNotification" style="display: none">
+      <div class="call-notification-content">
+        <p><span id="callerName">Someone</span> is calling...</p>
+        <div class="call-actions">
+          <button onclick="acceptCall()" class="accept-call">Accept</button>
+          <button onclick="declineCall()" class="decline-call">Decline</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       document
         .getElementById("copyText")

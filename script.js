@@ -3,6 +3,14 @@ let connections = new Map(); // Store multiple connections
 let username = "";
 let isHost = false; // Add at the top of the file with other global variables
 
+// Add global variables for call management
+let localStream = null;
+let audioTracks = new Map(); // Store audio tracks for each peer
+let isMicMuted = false;
+let isAudioMuted = false;
+let activeGroupCall = false; // Add new global variable to track active call state
+let callHost = null; // Add new variable to track call host
+
 // Show username screen first
 document.getElementById("usernameScreen").style.display = "block";
 document.getElementById("chatContainer").style.display = "none";
@@ -137,7 +145,6 @@ function connectToPeer(hostId) {
 function broadcastPeerUpdate() {
   if (!isHost) return;
 
-  // Include host information and all connected peers
   const peerList = {
     type: "peer_list_update",
     host: {
@@ -149,10 +156,11 @@ function broadcastPeerUpdate() {
       peerId: peerId,
       username: conn.username || "Unknown",
       isHost: false,
+      inCall: audioTracks.has(peerId),
     })),
+    activeGroupCall: activeGroupCall,
   };
 
-  // Broadcast to all connected peers
   for (let conn of connections.values()) {
     if (conn.open) {
       conn.send(peerList);
@@ -288,8 +296,73 @@ function handleData(data) {
         });
       }
     }
+  } else if (data.type === "call_start") {
+    callHost = data.callHost;
+    if (activeGroupCall) {
+      // If already in a call, connect to the call host
+      joinExistingCall(callHost);
+    } else {
+      // Show notification for new call
+      document.getElementById("callNotification").style.display = "block";
+      document.getElementById("callerName").textContent = data.username;
+      window.currentCallOrigin = data.callHost;
+    }
+  } else if (data.type === "call_host_changed") {
+    callHost = data.newHost;
+    // If you're the new host, connect with all participants
+    if (callHost === peer.id) {
+      for (let [peerId, conn] of connections.entries()) {
+        if (audioTracks.has(peerId)) {
+          initiateAudioCall(peerId);
+        }
+      }
+    }
+  } else if (data.type === "join_call") {
+    // Handle new participant joining call
+    if (isHost && activeGroupCall) {
+      initiateAudioCall(data.origin);
+    }
+  } else if (data.type === "call_end") {
+    activeGroupCall = false;
+    endGroupCall();
+  } else if (data.type === "incoming_call") {
+    // Show call notification popup
+    document.getElementById("callNotification").style.display = "block";
+    document.getElementById("callerName").textContent = data.username;
+
+    // Store call origin for accept/decline handling
+    window.currentCallOrigin = data.origin;
+  } else if (data.type === "call_accepted") {
+    if (isHost) {
+      initiateAudioCall(data.origin);
+    }
+  } else if (data.type === "call_declined") {
+    // Handle declined call if needed
+  } else if (data.type === "peer_disconnected") {
+    audioTracks.delete(data.peerId);
+    handleCallParticipants();
   } else {
     handleIncomingMessage(data);
+  }
+}
+
+// Add new function to join existing call
+function joinExistingCall(hostPeerId) {
+  if (!localStream) {
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        localStream = stream;
+        const call = peer.call(hostPeerId, stream);
+        handleCall(call);
+
+        activeGroupCall = true;
+        document.getElementById("startCallBtn").style.display = "none";
+        document.getElementById("endCallBtn").style.display = "inline-block";
+        document.getElementById("callControls").style.display = "flex";
+        updateCallStatus(true);
+      })
+      .catch((err) => console.error("Failed to get local stream:", err));
   }
 }
 
@@ -420,7 +493,9 @@ function updateConnectedPeers() {
         <div class="peer-item host ${
           hostConn.username === username ? "self" : ""
         }">
-            <span class="peer-id">${hostConn.username} (host)</span>
+            <div class="peer-content">
+                <span class="peer-id">${hostConn.username} (host)</span>
+            </div>
         </div>
     `;
 
@@ -436,8 +511,8 @@ function updateConnectedPeers() {
                     ${
                       isHost
                         ? `
-                        <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
-                           disconnect
+                        <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn" title="Disconnect user">
+                            disconnect
                         </button>
                     `
                         : ""
@@ -575,6 +650,394 @@ function handleSync(data) {
 
   // Aggiorna lo stato dell'host
   isHost = peer.id === host;
+
+  updateConnectedPeers();
+}
+
+// Update call status UI
+function updateCallStatus(isInCall) {
+  const callStatusDiv = document.createElement("div");
+  callStatusDiv.id = "callStatus";
+  callStatusDiv.className = "call-status";
+
+  if (isInCall) {
+    const participants = Array.from(audioTracks.keys()).map((peerId) => {
+      const conn = connections.get(peerId);
+      return conn?.username || "Unknown";
+    });
+
+    callStatusDiv.innerHTML = `
+            <div class="call-header">
+                <span class="active-call">
+                    <i class="fa-solid fa-phone"></i> Voice Call
+                </span>
+                <span class="participant-count">
+                    ${participants.length + 1} participants
+                </span>
+            </div>
+            <div class="call-participants">
+                <div class="participant">
+                    <i class="fa-solid fa-circle"></i>
+                    ${username} (You)
+                </div>
+                ${participants
+                  .map(
+                    (name) => `
+                    <div class="participant">
+                        <i class="fa-solid fa-circle"></i>
+                        ${name}
+                    </div>
+                `
+                  )
+                  .join("")}
+            </div>
+        `;
+  }
+
+  const chatHeader = document.querySelector(".chat-header");
+  const existingStatus = document.getElementById("callStatus");
+  if (existingStatus) {
+    existingStatus.remove();
+  }
+  chatHeader.appendChild(callStatusDiv);
+}
+
+// Update startGroupCall function
+async function startGroupCall() {
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    // Set self as call host
+    callHost = peer.id;
+    activeGroupCall = true;
+
+    // Notify all peers about the new call
+    for (let conn of connections.values()) {
+      if (conn.open) {
+        conn.send({
+          type: "call_start",
+          username: username,
+          origin: peer.id,
+          callHost: peer.id,
+        });
+      }
+    }
+
+    // Update UI
+    document.getElementById("startCallBtn").style.display = "none";
+    document.getElementById("endCallBtn").style.display = "inline-block";
+    document.getElementById("callControls").style.display = "flex";
+    updateCallStatus(true);
+  } catch (err) {
+    console.error("Failed to get local stream:", err);
+  }
+}
+
+// Add function to handle host migration
+function migrateCallHost() {
+  // Find the next available peer to be host
+  const nextHost = Array.from(connections.entries()).find(([_, conn]) =>
+    audioTracks.has(conn.peer)
+  )?.[1];
+
+  if (nextHost) {
+    callHost = nextHost.peer;
+    // Notify all peers about the new call host
+    for (let conn of connections.values()) {
+      if (conn.open) {
+        conn.send({
+          type: "call_host_changed",
+          newHost: callHost,
+          username: nextHost.username,
+        });
+      }
+    }
+  } else {
+    // No other participants, end call
+    endGroupCall();
+  }
+}
+
+// Update endGroupCall function
+function endGroupCall() {
+  if (localStream) {
+    localStream.getTracks().forEach((track) => {
+      track.stop();
+      track.enabled = false;
+    });
+    localStream = null;
+  }
+
+  audioTracks.forEach((stream) => {
+    if (stream && stream.getTracks) {
+      stream.getTracks().forEach((track) => {
+        track.stop();
+        track.enabled = false;
+      });
+    }
+  });
+  audioTracks.clear();
+
+  // Remove all audio elements
+  document.querySelectorAll("audio").forEach((audio) => {
+    audio.srcObject = null;
+    audio.remove();
+  });
+
+  activeGroupCall = false;
+
+  // Update UI
+  document.getElementById("startCallBtn").style.display = "inline-block";
+  document.getElementById("endCallBtn").style.display = "none";
+  document.getElementById("callControls").style.display = "none";
+  updateCallStatus(false);
+
+  // Notify all peers
+  for (let conn of connections.values()) {
+    if (conn.open) {
+      conn.send({
+        type: "call_end",
+        origin: peer.id,
+      });
+    }
+  }
+
+  // Update peer list to reflect call state
+  broadcastPeerUpdate();
+}
+
+// Update peer.on("call") handler
+peer.on("call", async function (call) {
+  try {
+    const callerConn = Array.from(connections.values()).find(
+      (conn) => conn.peer === call.peer
+    );
+    const callerName = callerConn ? callerConn.username : "Someone";
+
+    if (activeGroupCall) {
+      // Auto-accept if already in call
+      if (!localStream) {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+      }
+      call.answer(localStream);
+      handleCall(call);
+    } else {
+      // Show call notification for new calls
+      document.getElementById("callNotification").style.display = "block";
+      document.getElementById("callerName").textContent = callerName;
+      window.currentCall = call;
+    }
+  } catch (err) {
+    console.error("Failed to handle call:", err);
+  }
+});
+
+// Update handleCall function
+function handleCall(call) {
+  call.on("stream", function (remoteStream) {
+    const audio = new Audio();
+    audio.srcObject = remoteStream;
+    audio.muted = isAudioMuted; // Apply current mute state
+    audio.play().catch((err) => console.error("Audio playback failed:", err));
+    audioTracks.set(call.peer, remoteStream);
+    updateCallStatus(true);
+  });
+
+  call.on("close", function () {
+    audioTracks.delete(call.peer);
+    handleCallParticipants();
+  });
+}
+
+// Update toggleAudio function to properly handle audio muting
+function toggleAudio() {
+  isAudioMuted = !isAudioMuted;
+
+  // Mute all remote audio tracks
+  audioTracks.forEach((stream) => {
+    if (stream && stream.getAudioTracks) {
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = !isAudioMuted;
+      });
+    }
+  });
+
+  // Update all audio elements
+  document.querySelectorAll("audio").forEach((audio) => {
+    audio.muted = isAudioMuted;
+  });
+
+  const audioBtn = document.getElementById("toggleAudioBtn");
+  audioBtn.innerHTML = isAudioMuted
+    ? '<i class="fa-solid fa-volume-xmark"></i>'
+    : '<i class="fa-solid fa-volume-high"></i>';
+  audioBtn.classList.toggle("muted", isAudioMuted);
+}
+
+// Function to initiate audio call with a peer
+function initiateAudioCall(peerId) {
+  if (!localStream) return;
+
+  const call = peer.call(peerId, localStream);
+  handleCall(call);
+}
+
+// Function to handle incoming calls
+peer.on("call", async function (call) {
+  try {
+    if (!localStream) {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
+    const callerConn = Array.from(connections.values()).find(
+      (conn) => conn.peer === call.peer
+    );
+    const callerName = callerConn ? callerConn.username : "Someone";
+
+    // Auto-accept calls if there's an active group call
+    if (activeGroupCall) {
+      call.answer(localStream);
+      handleCall(call);
+      document.getElementById("callControls").style.display = "flex";
+      document.getElementById("startCallBtn").style.display = "none";
+      document.getElementById("endCallBtn").style.display = "inline-block";
+    } else {
+      // Show call notification for new calls
+      document.getElementById("callerName").textContent = callerName;
+      document.getElementById("callNotification").style.display = "block";
+      window.currentCall = call;
+    }
+  } catch (err) {
+    console.error("Failed to get local stream:", err);
+  }
+});
+
+// Update acceptCall function
+async function acceptCall() {
+  try {
+    if (!localStream) {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
+    if (window.currentCall) {
+      window.currentCall.answer(localStream);
+      handleCall(window.currentCall);
+    }
+
+    document.getElementById("callNotification").style.display = "none";
+    document.getElementById("callControls").style.display = "flex";
+    document.getElementById("startCallBtn").style.display = "none";
+    document.getElementById("endCallBtn").style.display = "inline-block";
+
+    activeGroupCall = true;
+
+    // Connect to call host
+    if (callHost && callHost !== peer.id) {
+      const call = peer.call(callHost, localStream);
+      handleCall(call);
+    }
+
+    // Notify others that you joined
+    for (let conn of connections.values()) {
+      if (conn.open) {
+        conn.send({
+          type: "joined_call",
+          username: username,
+          origin: peer.id,
+        });
+      }
+    }
+
+    updateCallStatus(true);
+  } catch (err) {
+    console.error("Failed to get local stream:", err);
+  }
+}
+
+// Function to decline call
+function declineCall() {
+  const hostConn = Array.from(connections.values()).find((conn) => conn.isHost);
+  if (hostConn?.open) {
+    hostConn.send({
+      type: "call_declined",
+      username: username,
+      origin: peer.id,
+    });
+  }
+
+  document.getElementById("callNotification").style.display = "none";
+}
+
+// Audio control functions
+function toggleMicrophone() {
+  if (localStream) {
+    const audioTrack = localStream.getAudioTracks()[0];
+    audioTrack.enabled = !audioTrack.enabled;
+    isMicMuted = !audioTrack.enabled;
+
+    const micBtn = document.getElementById("toggleMicBtn");
+    micBtn.innerHTML = isMicMuted
+      ? '<i class="fa-solid fa-microphone-slash"></i>'
+      : '<i class="fa-solid fa-microphone"></i>';
+    micBtn.classList.toggle("muted", isMicMuted);
+  }
+}
+
+// Add this new function for call notifications
+function showCallStartNotification(callerName) {
+  const notification = document.createElement("div");
+  notification.className = "call-start-notification";
+  notification.innerHTML = `
+        <div class="notification-content">
+            <i class="fa-solid fa-phone"></i>
+            <span>${callerName} started a voice call</span>
+        </div>
+    `;
+
+  document.body.appendChild(notification);
+
+  // Remove notification after 5 seconds
+  setTimeout(() => {
+    notification.classList.add("fade-out");
+    setTimeout(() => notification.remove(), 500);
+  }, 5000);
+}
+
+// Add function to handle call participant count
+function handleCallParticipants() {
+  const participantCount = audioTracks.size + 1; // +1 for self
+
+  if (participantCount <= 2) {
+    // If only two participants and one leaves, end call for remaining user
+    endGroupCall();
+    for (let conn of connections.values()) {
+      if (conn.open) {
+        conn.send({ type: "call_end" });
+      }
+    }
+  } else {
+    // Update call status with new participant count
+    updateCallStatus(true);
+  }
+}
+
+// Update handleConnectionClose function
+function handleConnectionClose(peerId) {
+  connections.delete(peerId);
+
+  if (activeGroupCall) {
+    audioTracks.delete(peerId);
+
+    // If call host disconnects, migrate to new host
+    if (peerId === callHost) {
+      migrateCallHost();
+    }
+
+    handleCallParticipants();
+    broadcastPeerUpdate();
+  }
 
   updateConnectedPeers();
 }
