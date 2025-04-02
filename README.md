@@ -1,2 +1,2 @@
 # Discord_P2P
-Discord peer to peer (now its locally maybe in the future in 2 different network)
+Discord peer-to-peer communication (currently local, with potential support for different networks in the future).
