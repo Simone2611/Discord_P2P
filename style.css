@@ -306,15 +306,20 @@ em {
   margin-bottom: 5px;
 }
 
-/* Remove or comment out the host-specific styling */
-/*.peer-item.host {
-    background-color: var(--background-secondary-color);
-    border-left: 3px solid var(--primary-button-color);
-}*/
+/* Add host-specific styling */
+.peer-item.host {
+  background-color: var(--background-secondary-color);
+  border-left: 3px solid var(--highlight-color);
+}
 
-/* Add styling for current user */
+/* Update current user styling */
 .peer-item.self {
   background-color: var(--background-secondary-color);
+  border-left: 3px solid var(--primary-button-color);
+}
+
+/* Add styling for when user is both host and self */
+.peer-item.self.host {
   border-left: 3px solid var(--primary-button-color);
 }
 

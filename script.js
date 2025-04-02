@@ -425,9 +425,11 @@ function updateConnectedPeers() {
     )?.[1] || { username: "Unknown Host" };
   }
 
-  // Add host first with self-highlighting if needed
+  // Add host first with appropriate highlighting
   peersHtml += `
-        <div class="peer-item ${hostConn.username === username ? "self" : ""}">
+        <div class="peer-item host ${
+          hostConn.username === username ? "self" : ""
+        }">
             <span class="peer-id">${hostConn.username} (host)</span>
         </div>
     `;
