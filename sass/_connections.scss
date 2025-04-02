@@ -1,0 +1,40 @@
+
+/* Update connected peers styles */
+.connected-peers {
+    padding: 8px;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+.no-peers {
+    color: var(--text-muted-color);
+    font-size: 0.9em;
+    text-align: center;
+    padding: 5px 0;
+}
+
+.peers-title {
+    font-size: 0.9em;
+    color: var(--text-muted-color);
+    margin-bottom: 8px;
+}
+
+
+/* Disconnessione */
+
+/* Pulsante torna pagina iniziale */
+.main-page-btn {
+    margin-top: 20px;
+    padding: 10px 20px;
+    background-color: var(--primary-button-color);
+    color: var(--text-color);
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background-color 0.2s;
+}
+
+.main-page-btn:hover {
+    background-color: var(--hover-button-color);
+}
