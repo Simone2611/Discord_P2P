@@ -10,6 +10,7 @@ let isMicMuted = false;
 let isAudioMuted = false;
 let activeGroupCall = false; // Add new global variable to track active call state
 let callHost = null; // Add new variable to track call host
+let isPersistentCall = false; // Add new global variable for persistent call state
 
 // Show username screen first
 document.getElementById("usernameScreen").style.display = "block";
@@ -184,6 +185,19 @@ peer.on("connection", function (connection) {
     hostId: peer.id,
   });
 
+  // Notify new peer about active persistent call
+  if (isHost && activeGroupCall && isPersistentCall) {
+    setTimeout(() => {
+      connection.send({
+        type: "call_start",
+        username: username,
+        origin: peer.id,
+        callHost: callHost,
+        isPersistent: true,
+      });
+    }, 1000);
+  }
+
   // Broadcast updated peer list after a short delay
   setTimeout(() => broadcastPeerUpdate(), 100);
 
@@ -298,10 +312,9 @@ function handleData(data) {
     }
   } else if (data.type === "call_start") {
     callHost = data.callHost;
-    if (activeGroupCall) {
-      // If already in a call, connect to the call host
-      joinExistingCall(callHost);
-    } else {
+    isPersistentCall = data.isPersistent;
+
+    if (!activeGroupCall) {
       // Show notification for new call
       document.getElementById("callNotification").style.display = "block";
       document.getElementById("callerName").textContent = data.username;
@@ -347,22 +360,27 @@ function handleData(data) {
 }
 
 // Add new function to join existing call
-function joinExistingCall(hostPeerId) {
-  if (!localStream) {
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        localStream = stream;
-        const call = peer.call(hostPeerId, stream);
-        handleCall(call);
+async function joinExistingCall(hostPeerId) {
+  try {
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        track.stop();
+        track.enabled = false;
+      });
+      localStream = null;
+    }
 
-        activeGroupCall = true;
-        document.getElementById("startCallBtn").style.display = "none";
-        document.getElementById("endCallBtn").style.display = "inline-block";
-        document.getElementById("callControls").style.display = "flex";
-        updateCallStatus(true);
-      })
-      .catch((err) => console.error("Failed to get local stream:", err));
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const call = peer.call(hostPeerId, localStream);
+    handleCall(call);
+
+    activeGroupCall = true;
+    document.getElementById("startCallBtn").style.display = "none";
+    document.getElementById("endCallBtn").style.display = "inline-block";
+    document.getElementById("callControls").style.display = "flex";
+    updateCallStatus(true);
+  } catch (err) {
+    console.error("Failed to join call:", err);
   }
 }
 
@@ -702,16 +720,43 @@ function updateCallStatus(isInCall) {
   chatHeader.appendChild(callStatusDiv);
 }
 
-// Update startGroupCall function
+// Replace startGroupCall function
 async function startGroupCall() {
   try {
+    // Force cleanup if there's an existing call
+    if (activeGroupCall || localStream) {
+      await endGroupCall();
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    // Reset and initialize call state
+    activeGroupCall = false;
+    callHost = null;
+    audioTracks.clear();
+    isPersistentCall = true; // Mark as persistent call
+
+    // Get fresh audio stream
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        track.stop();
+        track.enabled = false;
+      });
+      localStream = null;
+    }
+
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    // Set self as call host
-    callHost = peer.id;
+    // Set new call states
     activeGroupCall = true;
+    callHost = peer.id;
 
-    // Notify all peers about the new call
+    // Update UI
+    document.getElementById("startCallBtn").style.display = "none";
+    document.getElementById("endCallBtn").style.display = "inline-block";
+    document.getElementById("callControls").style.display = "flex";
+    updateCallStatus(true);
+
+    // Notify peers about persistent call
     for (let conn of connections.values()) {
       if (conn.open) {
         conn.send({
@@ -719,17 +764,15 @@ async function startGroupCall() {
           username: username,
           origin: peer.id,
           callHost: peer.id,
+          isPersistent: true,
         });
       }
     }
 
-    // Update UI
-    document.getElementById("startCallBtn").style.display = "none";
-    document.getElementById("endCallBtn").style.display = "inline-block";
-    document.getElementById("callControls").style.display = "flex";
-    updateCallStatus(true);
+    showCallStartNotification(username);
   } catch (err) {
-    console.error("Failed to get local stream:", err);
+    console.error("Failed to start call:", err);
+    await endGroupCall();
   }
 }
 
@@ -758,79 +801,115 @@ function migrateCallHost() {
   }
 }
 
-// Update endGroupCall function
-function endGroupCall() {
-  if (localStream) {
-    localStream.getTracks().forEach((track) => {
-      track.stop();
-      track.enabled = false;
-    });
-    localStream = null;
-  }
+// Update endGroupCall function to handle persistent calls
+async function endGroupCall() {
+  try {
+    if (!isPersistentCall || isHost) {
+      // Only the host can end a persistent call
+      // Or anyone can end a non-persistent call
+      // Regular cleanup code...
+      if (localStream) {
+        localStream.getTracks().forEach((track) => {
+          track.stop();
+          track.enabled = false;
+        });
+        localStream = null;
+      }
 
-  audioTracks.forEach((stream) => {
-    if (stream && stream.getTracks) {
-      stream.getTracks().forEach((track) => {
+      audioTracks.forEach((stream) => {
+        if (stream && stream.getTracks) {
+          stream.getTracks().forEach((track) => {
+            track.stop();
+            track.enabled = false;
+          });
+        }
+      });
+      audioTracks.clear();
+
+      document.querySelectorAll("audio").forEach((audio) => {
+        if (audio.srcObject) {
+          audio.srcObject.getTracks().forEach((track) => track.stop());
+          audio.srcObject = null;
+        }
+        audio.remove();
+      });
+
+      activeGroupCall = false;
+      isPersistentCall = false;
+      callHost = null;
+      window.currentCall = null;
+
+      // Update UI
+      document.getElementById("startCallBtn").style.display = "inline-block";
+      document.getElementById("endCallBtn").style.display = "none";
+      document.getElementById("callControls").style.display = "none";
+      updateCallStatus(false);
+
+      // Notify others
+      for (let conn of connections.values()) {
+        if (conn.open) {
+          conn.send({
+            type: "call_end",
+            origin: peer.id,
+            isHost: isHost,
+          });
+        }
+      }
+    } else {
+      // Just leave the call without ending it
+      if (localStream) {
+        localStream.getTracks().forEach((track) => {
+          track.stop();
+          track.enabled = false;
+        });
+        localStream = null;
+      }
+
+      activeGroupCall = false;
+      document.getElementById("startCallBtn").style.display = "inline-block";
+      document.getElementById("endCallBtn").style.display = "none";
+      document.getElementById("callControls").style.display = "none";
+    }
+
+    return new Promise((resolve) => setTimeout(resolve, 1000));
+  } catch (err) {
+    console.error("Error ending call:", err);
+  }
+}
+
+// Remove the duplicate peer.on("call") handler and keep just this one
+peer.on("call", async function (call) {
+  try {
+    // Clean up old stream if exists
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
         track.stop();
         track.enabled = false;
       });
+      localStream = null;
     }
-  });
-  audioTracks.clear();
 
-  // Remove all audio elements
-  document.querySelectorAll("audio").forEach((audio) => {
-    audio.srcObject = null;
-    audio.remove();
-  });
+    // Get fresh stream
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  activeGroupCall = false;
-
-  // Update UI
-  document.getElementById("startCallBtn").style.display = "inline-block";
-  document.getElementById("endCallBtn").style.display = "none";
-  document.getElementById("callControls").style.display = "none";
-  updateCallStatus(false);
-
-  // Notify all peers
-  for (let conn of connections.values()) {
-    if (conn.open) {
-      conn.send({
-        type: "call_end",
-        origin: peer.id,
-      });
-    }
-  }
-
-  // Update peer list to reflect call state
-  broadcastPeerUpdate();
-}
-
-// Update peer.on("call") handler
-peer.on("call", async function (call) {
-  try {
     const callerConn = Array.from(connections.values()).find(
       (conn) => conn.peer === call.peer
     );
     const callerName = callerConn ? callerConn.username : "Someone";
 
     if (activeGroupCall) {
-      // Auto-accept if already in call
-      if (!localStream) {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-      }
       call.answer(localStream);
       handleCall(call);
+      document.getElementById("callControls").style.display = "flex";
+      document.getElementById("startCallBtn").style.display = "none";
+      document.getElementById("endCallBtn").style.display = "inline-block";
     } else {
-      // Show call notification for new calls
-      document.getElementById("callNotification").style.display = "block";
       document.getElementById("callerName").textContent = callerName;
+      document.getElementById("callNotification").style.display = "block";
       window.currentCall = call;
     }
   } catch (err) {
-    console.error("Failed to handle call:", err);
+    console.error("Failed to handle incoming call:", err);
   }
 });
 
@@ -883,36 +962,6 @@ function initiateAudioCall(peerId) {
   const call = peer.call(peerId, localStream);
   handleCall(call);
 }
-
-// Function to handle incoming calls
-peer.on("call", async function (call) {
-  try {
-    if (!localStream) {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    }
-
-    const callerConn = Array.from(connections.values()).find(
-      (conn) => conn.peer === call.peer
-    );
-    const callerName = callerConn ? callerConn.username : "Someone";
-
-    // Auto-accept calls if there's an active group call
-    if (activeGroupCall) {
-      call.answer(localStream);
-      handleCall(call);
-      document.getElementById("callControls").style.display = "flex";
-      document.getElementById("startCallBtn").style.display = "none";
-      document.getElementById("endCallBtn").style.display = "inline-block";
-    } else {
-      // Show call notification for new calls
-      document.getElementById("callerName").textContent = callerName;
-      document.getElementById("callNotification").style.display = "block";
-      window.currentCall = call;
-    }
-  } catch (err) {
-    console.error("Failed to get local stream:", err);
-  }
-});
 
 // Update acceptCall function
 async function acceptCall() {
