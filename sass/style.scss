@@ -1,0 +1,72 @@
+@import 'username_screen';
+@import 'chat';
+@import 'sidebar';
+@import 'connections';
+@import 'vocal_call';
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial,
+        sans-serif;
+}
+
+:root {
+    --primary-button-color: #757fee;
+    --hover-button-color: #666fd3;
+    --background-primary-color: #313338;
+    --background-secondary-color: #2b2d31;
+    --input-background-color: #1e1f22;
+    --text-color: #ffffff;
+    --text-muted-color: #b5bac1;
+    --success-color: #3ba55c;
+    --error-color: #ed4245;
+    --highlight-color: #ff8c42;
+    --message-sent-color: #666fd3;
+    --message-received-color: #2b2d31;
+    --delete-hover-color: #c93437;
+}
+
+body {
+    background-color: var(--background-primary-color);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.main-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+em {
+    color: var(--text-muted-color);
+    font-style: italic;
+}
+
+
+/* Messaggio informativo sotto chat */
+.status {
+    padding: 10px 15px;
+    font-size: 0.8em;
+    text-align: center;
+    background-color: var(--background-secondary-color);
+    color: var(--text-muted-color);
+}
+/* Messaggio info */
+.success {
+    color: var(--success-color);
+}
+
+.error {
+    color: var(--error-color);
+}
+
+.hidden {
+    display: none;
+}

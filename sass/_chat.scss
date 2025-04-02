@@ -1,0 +1,184 @@
+
+/* Contenitore chat */
+.chat-container {
+    display: flex;
+    width: 100%;
+    max-width: 1200px;
+    height: 90vh;
+    background-color: var(--background-primary-color);
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+/* Header chat container */
+.chat-header {
+    padding: 15px 20px;
+    background-color: var(--background-secondary-color);
+    color: var(--text-color);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border-bottom: 1px solid var(--input-background-color);
+}
+/* Header info  */
+.header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.chat-header h1 {
+    font-size: 1.2em;
+    font-weight: 500;
+}
+/* Pulsanti chiamate/id */
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* ID host */
+.peer-info {
+    font-size: 0.9em;
+    color: var(--text-muted-color);
+    cursor: pointer;
+}
+
+
+
+/* Messaggi */
+
+.messages {
+    flex-grow: 1;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background-color: var(--background-primary-color);
+    scrollbar-width: none;
+    /* Per Firefox */
+    -ms-overflow-style: none;
+    /* Per Internet Explorer e Edge */
+}
+
+/* Scrollbar */
+.messages::-webkit-scrollbar {
+    display: none;
+}
+
+/* Singolo messaggio */
+.message {
+    max-width: 90%;
+    padding: 10px 15px;
+    border-radius: 3px;
+    font-size: 0.95em;
+    position: relative;
+    word-break: break-all;
+}
+
+/* Messaggio ricevuto */
+.received {
+    background-color: var(--message-received-color);
+    align-self: flex-start;
+    color: var(--text-color);
+}
+
+/* Messaggio inviato */
+.sent {
+    background-color: var(--message-sent-color);
+    align-self: flex-end;
+    color: var(--text-color);
+}
+/* Nome utente messaggio inviato */
+.sent .sender-name {
+    color: var(--background-secondary-color);
+}
+
+/* Nome utente messaggio */
+.sender-name {
+    font-size: 0.9em;
+    font-weight: bold;
+    margin-bottom: 2px;
+    color: var(--primary-button-color);
+}
+
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Orario messaggio inviato */
+.timestamp {
+    font-size: 0.7em;
+    color: var(--text-muted-color);
+    margin-top: 3px;
+}
+
+
+/* Pulsante eliminazione messaggio */
+.delete-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted-color);
+    cursor: pointer;
+    font-size: 1em;
+    padding: 0 5px;
+    visibility: hidden;
+}
+
+.message.sent:hover .delete-btn {
+    visibility: visible;
+}
+
+.delete-btn:hover {
+    color: var(--error-color);
+}
+
+/* Messaggio eliminato */
+.message.deleted .text {
+    color: var(--text-muted-color);
+    font-style: italic;
+}
+
+
+/* Area invio messaggio */
+.input-area {
+    padding: 15px;
+    border-top: 1px solid var(--input-background-color);
+    display: flex;
+    gap: 10px;
+    background-color: var(--background-primary-color);
+}
+
+.message-input {
+    flex-grow: 1;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 3px;
+    background-color: var(--input-background-color);
+    color: var(--text-color);
+    outline: none;
+}
+
+/* Pulsante invio messaggio */
+.send-btn {
+    padding: 10px 20px;
+    background-color: var(--primary-button-color);
+    color: var(--text-color);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.send-btn:hover {
+    background-color: var(--hover-button-color);
+}
+
+send-btn:disabled {
+    background-color: #4f545c;
+    cursor: not-allowed;
+}
