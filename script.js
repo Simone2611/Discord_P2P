@@ -133,27 +133,103 @@ function connectToPeer(hostId) {
   conn.on("error", (err) => handleConnectionError(peerId, err));
 }
 
+// Update broadcastPeerUpdate function
+function broadcastPeerUpdate() {
+  if (!isHost) return;
+
+  // Include host information and all connected peers
+  const peerList = {
+    type: "peer_list_update",
+    host: {
+      peerId: peer.id,
+      username: username,
+      isHost: true,
+    },
+    peers: Array.from(connections.entries()).map(([peerId, conn]) => ({
+      peerId: peerId,
+      username: conn.username || "Unknown",
+      isHost: false,
+    })),
+  };
+
+  // Broadcast to all connected peers
+  for (let conn of connections.values()) {
+    if (conn.open) {
+      conn.send(peerList);
+    }
+  }
+}
+
+// Update the peer.on("connection") handler
 peer.on("connection", function (connection) {
   const peerId = connection.peer;
-
   connections.set(peerId, connection);
 
-  // Send host information to new connection
+  // Initialize connection with username field
+  connection.username = null;
+
+  // Send immediate host information
   connection.send({
     type: "user_info",
     username: username,
     isHost: isHost,
+    hostId: peer.id,
   });
 
+  // Broadcast updated peer list after a short delay
+  setTimeout(() => broadcastPeerUpdate(), 100);
+
   connection.on("data", handleData);
-  connection.on("close", () => handleConnectionClose(peerId));
+  connection.on("close", () => {
+    handleConnectionClose(peerId);
+    broadcastPeerUpdate();
+  });
 
   updateConnectedPeers();
 });
 
 // Move these functions outside of peer.on("connection") to make them globally accessible
 function handleData(data) {
-  if (data.type === "disconnect") {
+  if (data.type === "peer_list_update") {
+    // Store host information
+    if (data.host) {
+      const hostConn = connections.get(data.host.peerId) || {};
+      hostConn.username = data.host.username;
+      hostConn.isHost = true;
+      connections.set(data.host.peerId, hostConn);
+    }
+
+    // Update connected peers
+    data.peers.forEach((peer) => {
+      if (connections.has(peer.peerId)) {
+        const conn = connections.get(peer.peerId);
+        conn.username = peer.username;
+        conn.isHost = peer.isHost;
+      } else {
+        // Create connection object for new peers
+        connections.set(peer.peerId, {
+          username: peer.username,
+          isHost: peer.isHost,
+          peer: peer.peerId,
+        });
+      }
+    });
+    updateConnectedPeers();
+  } else if (data.type === "user_info") {
+    const connection = Array.from(connections.values()).find(
+      (c) => c.peer === this.peer
+    );
+    if (connection) {
+      connection.username = data.username;
+      connection.isHost = data.isHost;
+
+      // If we're the host, broadcast the updated list
+      if (isHost) {
+        setTimeout(() => broadcastPeerUpdate(), 100);
+      }
+      updateConnectedPeers();
+    }
+  } else if (data.type === "disconnect") {
     // Mostra un messaggio di disconnessione all'utente
     alert(data.message);
 
@@ -181,15 +257,6 @@ function handleData(data) {
     // Aggiorna lo stato della chat
     document.getElementById("status").innerHTML =
       '<span class="error">You have been disconnected.</span>';
-  } else if (data.type === "user_info") {
-    const connection = Array.from(connections.values()).find(
-      (c) => c.peer === this.peer
-    );
-    if (connection) {
-      connection.username = data.username;
-      connection.isHost = data.isHost;
-      updateConnectedPeers();
-    }
   } else if (data.type === "request_host_info") {
     if (isHost) {
       const connection = Array.from(connections.values()).find(
@@ -221,6 +288,24 @@ function handleData(data) {
   } else {
     handleIncomingMessage(data);
   }
+}
+
+// Update handleConnectionClose function
+function handleConnectionClose(peerId) {
+  console.log("Connection closed with:", peerId);
+  connections.delete(peerId);
+
+  // Update UI immediately
+  updateConnectedPeers();
+
+  // If we're the host, broadcast the updated peer list
+  if (isHost) {
+    setTimeout(() => broadcastPeerUpdate(), 100);
+  }
+
+  document.getElementById(
+    "status"
+  ).innerHTML = `<span class="info">User disconnected</span>`;
 }
 
 function handleIncomingMessage(data) {
@@ -325,39 +410,47 @@ function sendMessage() {
   }
 }
 
+// Update updateConnectedPeers function
 function updateConnectedPeers() {
   const connectedPeersDiv = document.getElementById("connectedPeers");
-  if (connections.size === 0) {
-    connectedPeersDiv.innerHTML =
-      '<div class="no-peers">No connected peers</div>';
-    return;
+  let peersHtml = '<div class="peers-title">Connected Users:</div>';
+
+  // Find host info
+  let hostConn;
+  if (isHost) {
+    hostConn = { username: username, peerId: peer.id };
+  } else {
+    hostConn = Array.from(connections.entries()).find(
+      ([_, conn]) => conn.isHost
+    )?.[1] || { username: "Unknown Host" };
   }
 
-  let peersHtml = '<div class="peers-title">Connected Peers:</div>';
-
-  // Add yourself first
+  // Add host first with self-highlighting if needed
   peersHtml += `
-    <div class="peer-item self">
-      <span class="peer-id">${username} ${isHost ? "(host)" : ""}</span>
-    </div>
-  `;
-
-  // Add other peers
-  for (let [peerId, conn] of connections.entries()) {
-    const displayName = conn.username || "Unknown";
-    const hostLabel = conn.isHost ? " (host)" : "";
-    peersHtml += `
-      <div class="peer-item">
-        <span class="peer-id">${displayName}${hostLabel}</span>
-        ${
-          isHost
-            ? `<button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
-                Disconnect
-              </button>`
-            : ""
-        }
-      </div>
+        <div class="peer-item ${hostConn.username === username ? "self" : ""}">
+            <span class="peer-id">${hostConn.username} (host)</span>
+        </div>
     `;
+
+  // Add other connected peers
+  for (let [peerId, conn] of connections.entries()) {
+    if (conn.isHost) continue; // Skip host as already added
+    const displayName = conn.username || "Connecting...";
+
+    peersHtml += `
+            <div class="peer-item ${displayName === username ? "self" : ""}">
+                <span class="peer-id">${displayName}</span>
+                ${
+                  isHost
+                    ? `
+                    <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
+                        Disconnect
+                    </button>
+                `
+                    : ""
+                }
+            </div>
+        `;
   }
 
   connectedPeersDiv.innerHTML = peersHtml;
@@ -386,8 +479,9 @@ function disconnectPeer(peerId) {
     // Aggiorna la lista dei peer connessi
     updateConnectedPeers();
 
-    document.getElementById("status").innerHTML =
-      `<span class="success">Disconnected peer: ${peerId}</span>`;
+    document.getElementById(
+      "status"
+    ).innerHTML = `<span class="success">Disconnected peer: ${peerId}</span>`;
   }
 }
 

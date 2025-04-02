@@ -306,9 +306,22 @@ em {
   margin-bottom: 5px;
 }
 
-/* Colore evidenziato per il proprio nome */
+/* Remove or comment out the host-specific styling */
+/*.peer-item.host {
+    background-color: var(--background-secondary-color);
+    border-left: 3px solid var(--primary-button-color);
+}*/
+
+/* Add styling for current user */
 .peer-item.self {
-  color: var(--primary-button-color); 
+  background-color: var(--background-secondary-color);
+  border-left: 3px solid var(--primary-button-color);
+}
+
+.peer-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .disconnect-btn {
