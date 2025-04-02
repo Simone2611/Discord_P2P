@@ -41,32 +41,39 @@
 
     <!-- Chat Container (initially hidden) -->
     <div class="chat-container" id="chatContainer">
-      <div class="chat-header">
-        <h1>PeerJS Chat</h1>
-        <div class="peer-info" id="copyText">
-          ID host <span id="peerId">...</span>
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <h2>Connected Users</h2>
+        </div>
+        <div class="connected-peers" id="connectedPeers">
+          <div class="no-peers">No connected peers</div>
         </div>
       </div>
 
-      <div class="connected-peers" id="connectedPeers">
-        <div class="no-peers">No connected peers</div>
+      <div class="main-content">
+        <div class="chat-header">
+          <h1>PeerJS Chat</h1>
+          <div class="peer-info" id="copyText">
+            ID host <span id="peerId">...</span>
+          </div>
+        </div>
+
+        <div class="messages" id="received"></div>
+
+        <div class="input-area">
+          <input
+            type="text"
+            id="message"
+            class="message-input"
+            placeholder="Type your message..."
+          />
+          <button onclick="sendMessage()" id="sendBtn" class="send-btn">
+            Send
+          </button>
+        </div>
+
+        <div class="status" id="status"></div>
       </div>
-
-      <div class="messages" id="received"></div>
-
-      <div class="input-area">
-        <input
-          type="text"
-          id="message"
-          class="message-input"
-          placeholder="Type your message..."
-        />
-        <button onclick="sendMessage()" id="sendBtn" class="send-btn">
-          Send
-        </button>
-      </div>
-
-      <div class="status" id="status"></div>
     </div>
     <script>
       document

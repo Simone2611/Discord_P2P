@@ -190,7 +190,25 @@ peer.on("connection", function (connection) {
 
 // Move these functions outside of peer.on("connection") to make them globally accessible
 function handleData(data) {
-  if (data.type === "peer_list_update") {
+  if (data.type === "delete_message") {
+    // Update message locally
+    updateDeletedMessage(data.messageId);
+
+    // If we're the host, forward the deletion to all other peers
+    if (isHost && data.origin !== peer.id) {
+      for (let [peerId, conn] of connections.entries()) {
+        if (conn.open && peerId !== data.origin) {
+          conn.send(data);
+        }
+      }
+    }
+  } else if (data.type === "chat") {
+    // Add message ID to chat messages if not present
+    if (!data.messageId) {
+      data.messageId = Date.now();
+    }
+    handleIncomingMessage(data);
+  } else if (data.type === "peer_list_update") {
     // Store host information
     if (data.host) {
       const hostConn = connections.get(data.host.peerId) || {};
@@ -270,44 +288,12 @@ function handleData(data) {
         });
       }
     }
-  } else if (data.type === "delete_message") {
-    // Gestisci la cancellazione del messaggio
-    const messageElement = document.querySelector(
-      `.message[data-message-id="${data.messageId}"]`
-    );
-    if (messageElement) {
-      const textDiv = messageElement.querySelector(".text");
-      textDiv.innerHTML = "<em>Message deleted</em>";
-
-      // Rimuovi il pulsante di cancellazione se presente
-      const deleteBtn = messageElement.querySelector(".delete-btn");
-      if (deleteBtn) {
-        deleteBtn.remove();
-      }
-    }
   } else {
     handleIncomingMessage(data);
   }
 }
 
-// Update handleConnectionClose function
-function handleConnectionClose(peerId) {
-  console.log("Connection closed with:", peerId);
-  connections.delete(peerId);
-
-  // Update UI immediately
-  updateConnectedPeers();
-
-  // If we're the host, broadcast the updated peer list
-  if (isHost) {
-    setTimeout(() => broadcastPeerUpdate(), 100);
-  }
-
-  document.getElementById(
-    "status"
-  ).innerHTML = `<span class="info">User disconnected</span>`;
-}
-
+// Update handleIncomingMessage function
 function handleIncomingMessage(data) {
   console.log("Received:", data);
   const received = document.getElementById("received");
@@ -317,34 +303,46 @@ function handleIncomingMessage(data) {
     minute: "2-digit",
   });
 
-  let messageObj;
-  try {
-    messageObj = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    messageObj = {
-      username: "Unknown",
-      text: data,
-    };
-  }
+  let messageObj = typeof data === "string" ? JSON.parse(data) : data;
 
-  if (messageObj.type === "chat" || messageObj.deleted) {
+  // Only add message if it's not already displayed
+  const existingMessage = document.querySelector(
+    `.message[data-message-id="${messageObj.messageId}"]`
+  );
+
+  if (!existingMessage) {
+    // Add message to chat
     received.innerHTML += `
       <div class="message ${
         messageObj.origin === peer.id ? "sent" : "received"
-      }" data-message-id="${messageObj.messageId || Date.now()}">
-          <div class="sender-name">${messageObj.username || "Unknown"}</div>
-          <div class="text">${
-            messageObj.deleted ? "<em>Message deleted</em>" : messageObj.text
-          }</div>
+      }" 
+           data-message-id="${messageObj.messageId}">
+          <div class="message-header">
+              <div class="sender-name">${
+                messageObj.origin === peer.id ? "You" : messageObj.username
+              }</div>
+              ${
+                messageObj.origin === peer.id
+                  ? `
+                  <button class="delete-btn" onclick="deleteMessage(this.parentElement.parentElement)">
+                      <i class="fa-solid fa-trash"></i>
+                  </button>
+              `
+                  : ""
+              }
+          </div>
+          <div class="text">${messageObj.text}</div>
           <div class="timestamp">${timeString}</div>
       </div>
     `;
     received.scrollTop = received.scrollHeight;
 
-    // Forward message to other peers if needed
-    for (let [peerId, conn] of connections.entries()) {
-      if (conn.open && conn.peer !== messageObj.origin) {
-        conn.send({ ...messageObj, origin: peer.id });
+    // If we're the host, forward the message to all other peers
+    if (isHost && messageObj.origin !== peer.id) {
+      for (let [peerId, conn] of connections.entries()) {
+        if (conn.open && peerId !== messageObj.origin) {
+          conn.send(messageObj);
+        }
       }
     }
   }
@@ -370,35 +368,27 @@ function sendMessage() {
       messageId: messageId,
     };
 
-    // Send to all peers
-    for (let conn of connections.values()) {
-      if (conn.open) {
-        conn.send(messageObj);
+    // If we're the host, send to all peers
+    if (isHost) {
+      for (let conn of connections.values()) {
+        if (conn.open) {
+          conn.send(messageObj);
+        }
+      }
+    } else {
+      // If we're not the host, only send to the host
+      const hostConn = Array.from(connections.values()).find(
+        (conn) => conn.isHost
+      );
+      if (hostConn && hostConn.open) {
+        hostConn.send(messageObj);
       }
     }
 
-    // Add your own message to the chat
-    const received = document.getElementById("received");
-    const now = new Date();
-    const timeString = now.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    // Add our own message to the chat
+    handleIncomingMessage(messageObj);
 
-    received.innerHTML += `
-      <div class="message sent" data-message-id="${messageId}">
-          <div class="message-header">
-              <div class="sender-name">You</div>
-              <button class="delete-btn" onclick="deleteMessage(this.parentElement.parentElement)">
-                <i class="fa-solid fa-trash"></i>
-              </button>
-          </div>
-          <div class="text">${messageText}</div>
-          <div class="timestamp">${timeString}</div>
-      </div>
-    `;
-    received.scrollTop = received.scrollHeight;
-
+    // Clear input and update status
     document.getElementById("message").value = "";
     document.getElementById("status").innerHTML =
       '<span class="success">Message sent!</span>';
@@ -413,7 +403,7 @@ function sendMessage() {
 // Update updateConnectedPeers function
 function updateConnectedPeers() {
   const connectedPeersDiv = document.getElementById("connectedPeers");
-  let peersHtml = '<div class="peers-title">Connected Users:</div>';
+  let peersHtml = "";
 
   // Find host info
   let hostConn;
@@ -441,21 +431,24 @@ function updateConnectedPeers() {
 
     peersHtml += `
             <div class="peer-item ${displayName === username ? "self" : ""}">
-                <span class="peer-id">${displayName}</span>
-                ${
-                  isHost
-                    ? `
-                    <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
-                        Disconnect
-                    </button>
-                `
-                    : ""
-                }
+                <div class="peer-content">
+                    <span class="peer-id">${displayName}</span>
+                    ${
+                      isHost
+                        ? `
+                        <button onclick="disconnectPeer('${peerId}')" class="disconnect-btn">
+                           disconnect
+                        </button>
+                    `
+                        : ""
+                    }
+                </div>
             </div>
         `;
   }
 
-  connectedPeersDiv.innerHTML = peersHtml;
+  connectedPeersDiv.innerHTML =
+    peersHtml || '<div class="no-peers">No connected peers</div>';
 }
 
 function disconnectPeer(peerId) {
@@ -487,30 +480,58 @@ function disconnectPeer(peerId) {
   }
 }
 
-// Update the deleteMessage function to include the type
+// Update the deleteMessage function
 function deleteMessage(messageElement) {
   const messageId = messageElement.dataset.messageId;
 
-  // Aggiorna il messaggio localmente
-  const textDiv = messageElement.querySelector(".text");
-  textDiv.innerHTML = "<em>Message deleted</em>";
-
-  // Rimuovi il pulsante di cancellazione
-  const deleteBtn = messageElement.querySelector(".delete-btn");
-  if (deleteBtn) {
-    deleteBtn.remove();
-  }
-
-  // Invia una notifica di cancellazione agli altri peer
+  // Create delete notification
   const deleteNotification = {
     type: "delete_message",
     messageId: messageId,
+    username: username,
+    origin: peer.id,
+    timestamp: Date.now(),
   };
 
-  for (let conn of connections.values()) {
-    if (conn.open) {
-      conn.send(deleteNotification);
+  // If we're the host, broadcast to all peers
+  if (isHost) {
+    for (let conn of connections.values()) {
+      if (conn.open) {
+        conn.send(deleteNotification);
+      }
     }
+  } else {
+    // If we're not the host, send to the host for broadcasting
+    const hostConn = Array.from(connections.values()).find(
+      (conn) => conn.isHost
+    );
+    if (hostConn && hostConn.open) {
+      hostConn.send(deleteNotification);
+    }
+  }
+
+  // Update message locally
+  updateDeletedMessage(messageId);
+}
+
+// Add new function to handle message deletion updates
+function updateDeletedMessage(messageId) {
+  const messageElement = document.querySelector(
+    `.message[data-message-id="${messageId}"]`
+  );
+  if (messageElement) {
+    // Update the message text
+    const textDiv = messageElement.querySelector(".text");
+    textDiv.innerHTML = "<em>Message deleted</em>";
+
+    // Remove delete button if present
+    const deleteBtn = messageElement.querySelector(".delete-btn");
+    if (deleteBtn) {
+      deleteBtn.remove();
+    }
+
+    // Update message styling
+    messageElement.classList.add("deleted");
   }
 }
 
